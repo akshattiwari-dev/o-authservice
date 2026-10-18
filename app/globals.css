@@ -1,0 +1,137 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --header-height: 84px;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-white text-ink antialiased;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+::selection {
+  background: #cfe4ff;
+}
+
+*:focus-visible {
+  outline: 2px solid #0070f3;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Long-form article typography — serif for comfortable extended reading,
+   matching the reference site's book-like chapter pages. Headings stay
+   sans-serif so they read as UI, not body copy. */
+.prose-article {
+  max-width: 760px;
+  line-height: 1.75;
+  color: #2b2b2b;
+  font-family: Lora, Georgia, Cambria, "Times New Roman", Times, serif;
+}
+
+.prose-article h2 {
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #111111;
+  margin-top: 3.25rem;
+  margin-bottom: 1.15rem;
+  letter-spacing: -0.01em;
+}
+
+.prose-article h3 {
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #111111;
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+}
+
+.prose-article p {
+  margin-bottom: 1.5rem;
+  font-size: 1.125rem;
+}
+
+.prose-article ul,
+.prose-article ol {
+  margin-bottom: 1.5rem;
+  padding-left: 1.5rem;
+}
+
+.prose-article li {
+  margin-bottom: 0.5rem;
+  font-size: 1.125rem;
+}
+
+.prose-article ul {
+  list-style-type: disc;
+}
+
+.prose-article ol {
+  list-style-type: decimal;
+}
+
+.prose-article a {
+  color: #0070f3;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: #b8d7ff;
+}
+
+.prose-article a:hover {
+  text-decoration-color: #0070f3;
+}
+
+.prose-article code {
+  background: #F5F5F5;
+  border: 1px solid #E5E7EA;
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.875em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: #b03434;
+}
+
+.prose-article pre {
+  background: #111111;
+  color: #f5f5f5;
+  border-radius: 8px;
+  padding: 1.25rem;
+  overflow-x: auto;
+  margin-bottom: 1.5rem;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.prose-article pre code {
+  background: transparent;
+  border: none;
+  color: inherit;
+  padding: 0;
+}
+
+.prose-article blockquote {
+  border-left: 3px solid #0070f3;
+  padding-left: 1.1rem;
+  margin: 1.5rem 0;
+  color: #5b5b5b;
+  font-style: italic;
+}
