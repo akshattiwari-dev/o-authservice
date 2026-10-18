@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+
+# Environment files — never commit real secrets. .env.example ships;
+# nothing else under .env* should.
+.env
+.env.local
+.env.*.local
+.env.test.local
+
+# Prisma
+prisma/*.db
+prisma/migrations/dev/
+
+# Test coverage output
+coverage/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS / editor cruft
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# Vercel (unused here, but harmless to ignore if ever added)
+.vercel
