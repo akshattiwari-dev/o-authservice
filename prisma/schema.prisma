@@ -1,0 +1,312 @@
+// o-auth platform — Prisma schema
+// Postgres. Run `npm run db:push` (dev) or `npm run db:migrate` to apply.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Auth — roles + NextAuth (Auth.js) adapter models
+// ─────────────────────────────────────────────────────────────────────────
+
+enum Role {
+  USER
+  DEVELOPER
+  ADMIN
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  // Null when the account was created via an OAuth login provider only.
+  password      String?
+  role          Role      @default(USER)
+
+  // A5: bumped on every successful password reset (and available for any
+  // future "sign out everywhere" action). Embedded into the JWT at
+  // sign-in/refresh and re-checked against this column on every request in
+  // the jwt() callback — a session whose embedded value is older than this
+  // is treated as revoked, even though NextAuth's "jwt" strategy has no
+  // server-side session row to delete directly.
+  passwordChangedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accounts Account[]
+  sessions Session[]
+
+  oauthClients      OAuthClient[]
+  authorizationCodes AuthorizationCode[]
+  accessTokens      AccessToken[]
+  refreshTokens     RefreshToken[]
+  apiKeys           ApiKey[]
+  chapterProgress   ChapterProgress[]
+  chapterNotes      ChapterNote[]
+  auditLogs         AuditLog[]
+
+  @@index([email])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// OAuth 2.0 server
+// ─────────────────────────────────────────────────────────────────────────
+
+// Global catalog of scopes the platform recognizes. OAuthClient.scopes and
+// every token's `scopes` field reference these names; kept as a plain
+// String[] on those models (rather than an explicit join table) so the
+// hot-path token/introspection code isn't doing extra joins, while this
+// table remains the source of truth for what a scope means and whether
+// it's currently offered.
+model Scope {
+  id          String  @id @default(cuid())
+  name        String  @unique // e.g. "profile:read", "chapters:write"
+  description String
+  isDefault   Boolean @default(false)
+
+  createdAt DateTime @default(now())
+}
+
+model OAuthClient {
+  id          String  @id @default(cuid())
+  clientId    String  @unique @default(cuid())
+  // Null for public clients (SPA / native / CLI) — those MUST use PKCE.
+  clientSecretHash String?
+  isPublic    Boolean @default(false)
+  // Admin kill-switch — a disabled client is rejected at /authorize AND at
+  // /token, and every one of its existing tokens is treated as invalid.
+  disabled    Boolean @default(false)
+
+  name        String
+  description String?
+  logoUrl     String?
+
+  // Exact-match allow-list. A request's redirect_uri must be a byte-for-byte
+  // match against one of these — no prefix or wildcard matching.
+  redirectUris String[]
+  scopes       String[]
+
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  authorizationCodes AuthorizationCode[]
+  accessTokens       AccessToken[]
+  refreshTokens      RefreshToken[]
+
+  @@index([ownerId])
+  @@index([clientId])
+}
+
+// Short-lived, single-use code exchanged at the token endpoint.
+// The code value itself is stored hashed — only ever handed to the client
+// once, in the redirect.
+model AuthorizationCode {
+  id        String  @id @default(cuid())
+  codeHash  String  @unique
+
+  clientId String
+  client   OAuthClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  redirectUri String
+  scopes      String[]
+
+  // PKCE (RFC 7636) — codeChallengeMethod is "S256" or "plain".
+  // Required for public clients, optional (but supported) for confidential.
+  codeChallenge       String?
+  codeChallengeMethod String?
+
+  // Correlates this flow to a live Playground session for real-time log
+  // streaming. Null for non-Playground flows.
+  playgroundFlowId String?
+
+  used      Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([clientId])
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// Access tokens are signed JWTs (RS256, via jose) — self-contained and
+// stateless to verify. This row exists so revocation and introspection
+// still work: `jti` is the JWT's unique ID, looked up here to check
+// `revoked` even though the signature itself is still valid.
+model AccessToken {
+  id  String @id @default(cuid())
+  jti String @unique
+
+  clientId String
+  client   OAuthClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  scopes  String[]
+  revoked Boolean  @default(false)
+
+  refreshToken RefreshToken?
+
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([clientId])
+  @@index([userId])
+  @@index([jti])
+}
+
+// Refresh tokens are opaque random strings — only their SHA-256 hash is
+// stored. Rotation: each use revokes this row and issues a new one linked
+// via `rotatedToId`, so reuse of a stale refresh token is detectable.
+model RefreshToken {
+  id         String  @id @default(cuid())
+  tokenHash  String  @unique
+
+  clientId String
+  client   OAuthClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  accessTokenId String?      @unique
+  accessToken   AccessToken? @relation(fields: [accessTokenId], references: [id], onDelete: SetNull)
+
+  scopes  String[]
+  revoked Boolean  @default(false)
+
+  rotatedToId String? @unique
+  rotatedTo   RefreshToken?  @relation("RefreshTokenRotation", fields: [rotatedToId], references: [id], onDelete: SetNull)
+  rotatedFrom RefreshToken?  @relation("RefreshTokenRotation")
+
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([clientId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Learning system
+// ─────────────────────────────────────────────────────────────────────────
+
+model ChapterProgress {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chapterSlug String
+  completed   Boolean   @default(false)
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, chapterSlug])
+  @@index([userId])
+}
+
+model ChapterNote {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chapterSlug String
+  body        String   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, chapterSlug])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Developer API keys (separate from OAuth tokens — simple bearer keys for
+// scripts / server-to-server use against the platform's own REST helpers)
+// ─────────────────────────────────────────────────────────────────────────
+
+model ApiKey {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  keyPrefix String    // first 8 chars, shown in the UI for identification
+  keyHash   String    @unique
+  lastUsedAt DateTime?
+  revoked   Boolean   @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Audit log — security-relevant events across the platform
+// ─────────────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id       String   @id @default(cuid())
+  userId   String?
+  user     User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action   String   // e.g. "client.created", "token.issued", "token.revoked"
+  metadata Json?
+  ip       String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
