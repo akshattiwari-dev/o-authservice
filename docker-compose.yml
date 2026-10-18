@@ -1,0 +1,48 @@
+# One-command local bootstrap:
+#   cp .env.example .env   # fill in values (or leave DB creds as-is for compose)
+#   docker compose up --build
+#   docker compose exec app npm run db:push
+#   docker compose exec app npm run db:seed
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: o_auth_platform
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Optional — only used if REDIS_URL is set. The rate limiter falls back to
+  # in-memory automatically when this isn't configured, so `docker compose up`
+  # without touching this service still works fine.
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  app:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/o_auth_platform?schema=public"
+
+volumes:
+  postgres_data:
