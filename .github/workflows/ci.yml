@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: o_auth_platform_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/o_auth_platform_test?schema=public"
+      NEXTAUTH_SECRET: "ci-test-secret-not-for-production"
+      NEXTAUTH_URL: "http://localhost:3000"
+      # If CI_OAUTH_PRIVATE_KEY/CI_OAUTH_PUBLIC_KEY repo secrets exist, use
+      # them; otherwise scripts/ci-generate-test-keys.js below generates a
+      # throwaway pair for this run only and writes it into $GITHUB_ENV.
+      # Never real secrets — nothing here is used outside CI.
+      OAUTH_PRIVATE_KEY: ${{ secrets.CI_OAUTH_PRIVATE_KEY }}
+      OAUTH_PUBLIC_KEY: ${{ secrets.CI_OAUTH_PUBLIC_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate CI-only test signing keys (skipped if repo secrets are set)
+        run: node scripts/ci-generate-test-keys.js
+
+      - name: Prisma generate
+        run: npx prisma generate
+
+      - name: Push schema to test DB
+        run: npx prisma db push
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test (unit + integration)
+        run: npm test
