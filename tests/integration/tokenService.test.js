@@ -1,6 +1,7 @@
 // Requires a reachable Postgres at DATABASE_URL (see README "Testing").
 // CI provisions this via a service container; locally, point DATABASE_URL
 // at a scratch database before running `npm test`.
+import { sha256 } from "@/utils/crypto";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
