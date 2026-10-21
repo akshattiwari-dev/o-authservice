@@ -34,8 +34,8 @@ export default async function AuthorizePage({ searchParams }) {
   // Rate-limit by client_id alone here (no IP available to a server
   // component the same way a route handler has one) — still meaningfully
   // throttles a client being hammered from anywhere.
-  if (client_id) {
-    const limit = checkRateLimit(`authorize:${client_id}`, {
+    if (client_id) {
+    const limit = await checkRateLimit(`authorize:${client_id}`, {
       limit: AUTHORIZE_RATE_LIMIT,
       windowMs: AUTHORIZE_RATE_WINDOW_MS,
     });

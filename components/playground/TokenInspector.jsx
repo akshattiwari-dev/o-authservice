@@ -19,6 +19,7 @@ export default function TokenInspector({ tokens, client, onLog, flowId }) {
 
   const header = current?.access_token ? decodeJwtPart(current.access_token, 0) : null;
   const claims = current?.access_token ? decodeJwtPart(current.access_token, 1) : null;
+  const idTokenClaims = current?.id_token ? decodeJwtPart(current.id_token, 1) : null;
 
   async function callToken(grantExtra) {
     setBusy(true);
@@ -75,9 +76,12 @@ export default function TokenInspector({ tokens, client, onLog, flowId }) {
 
   async function callUserInfo() {
     setBusy(true);
-    const res = await fetch(`/api/oauth/userinfo?playground_flow_id=${encodeURIComponent(flowId)}`, {
-      headers: { Authorization: `Bearer ${current.access_token}` },
-    });
+    const res = await fetch(
+      `/api/oauth/userinfo?playground_flow_id=${encodeURIComponent(flowId || "")}`,
+      {
+        headers: { Authorization: `Bearer ${current.access_token}` },
+      }
+    );
     const data = await res.json();
     setBusy(false);
     setUserInfo(data);
@@ -91,12 +95,17 @@ export default function TokenInspector({ tokens, client, onLog, flowId }) {
 
       <div className="mt-3 space-y-3">
         <TokenField label="access_token" value={current.access_token} />
-        {current.refresh_token && <TokenField label="refresh_token" value={current.refresh_token} />}
+        {current.refresh_token && (
+          <TokenField label="refresh_token" value={current.refresh_token} />
+        )}
+        {current.id_token && <TokenField label="id_token" value={current.id_token} />}
       </div>
 
       {header && (
         <div className="mt-4">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Decoded JWT header</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+            Decoded JWT header
+          </p>
           <pre className="mt-1 overflow-x-auto rounded bg-ink/[0.04] p-2 font-mono text-[11px] leading-relaxed text-ink">
             {JSON.stringify(header, null, 2)}
           </pre>
@@ -105,16 +114,31 @@ export default function TokenInspector({ tokens, client, onLog, flowId }) {
 
       {claims && (
         <div className="mt-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Decoded JWT payload</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+            Decoded access token payload
+          </p>
           <pre className="mt-1 overflow-x-auto rounded bg-ink/[0.04] p-2 font-mono text-[11px] leading-relaxed text-ink">
             {JSON.stringify(claims, null, 2)}
           </pre>
         </div>
       )}
 
+      {idTokenClaims && (
+        <div className="mt-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+            Decoded ID Token payload
+          </p>
+          <pre className="mt-1 overflow-x-auto rounded bg-ink/[0.04] p-2 font-mono text-[11px] leading-relaxed text-ink">
+            {JSON.stringify(idTokenClaims, null, 2)}
+          </pre>
+        </div>
+      )}
+
       {userInfo && (
         <div className="mt-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">UserInfo response</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+            UserInfo response
+          </p>
           <pre className="mt-1 overflow-x-auto rounded bg-ink/[0.04] p-2 font-mono text-[11px] leading-relaxed text-ink">
             {JSON.stringify(userInfo, null, 2)}
           </pre>

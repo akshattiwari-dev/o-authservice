@@ -26,8 +26,14 @@ async function handleUserInfo(request) {
       status: "error",
     });
     return NextResponse.json(
-      { error: "invalid_request", error_description: "Missing Bearer access token." },
-      { status: 401, headers: { "WWW-Authenticate": 'Bearer realm="o-auth"' } }
+      {
+        error: "invalid_request",
+        error_description: "Missing Bearer access token.",
+      },
+      {
+        status: 401,
+        headers: { "WWW-Authenticate": 'Bearer realm="o-auth"' },
+      }
     );
   }
 
@@ -42,51 +48,110 @@ async function handleUserInfo(request) {
   let payload;
   try {
     payload = await verifyAccessToken(token);
-  } catch {
+  } catch (err) {
+    console.error("[userinfo] JWT verify failed:", err?.message || err);
     emitStep(flowId, {
       step: 6,
       title: "UserInfo request failed",
-      detail: "Invalid or expired token.",
+      detail: `Invalid or expired token: ${err?.message || "verify failed"}`,
       status: "error",
     });
     return NextResponse.json(
-      { error: "invalid_token" },
-      { status: 401, headers: { "WWW-Authenticate": 'Bearer error="invalid_token"' } }
+      {
+        error: "invalid_token",
+        error_description: "Access token is invalid or expired.",
+      },
+      {
+        status: 401,
+        headers: { "WWW-Authenticate": 'Bearer error="invalid_token"' },
+      }
     );
   }
 
-  const row = await prisma.accessToken.findUnique({ where: { jti: payload.jti } });
+  console.log(
+    "[userinfo] jti=",
+    payload.jti,
+    "sub=",
+    payload.sub,
+    "scope=",
+    payload.scope
+  );
+
+  if (!payload.jti || !payload.sub) {
+    return NextResponse.json(
+      {
+        error: "invalid_token",
+        error_description: "Token missing jti or sub claim.",
+      },
+      {
+        status: 401,
+        headers: { "WWW-Authenticate": 'Bearer error="invalid_token"' },
+      }
+    );
+  }
+
+  const row = await prisma.accessToken.findUnique({
+    where: { jti: payload.jti },
+  });
+  console.log(
+    "[userinfo] db row=",
+    row
+      ? { revoked: row.revoked, expiresAt: row.expiresAt.toISOString() }
+      : null
+  );
+
   if (!row || row.revoked || row.expiresAt < new Date()) {
     emitStep(flowId, {
       step: 6,
       title: "UserInfo request failed",
-      detail: "Token revoked or expired.",
+      detail: !row
+        ? "Access token jti not found in database."
+        : row.revoked
+          ? "Access token has been revoked."
+          : "Access token has expired.",
       status: "error",
     });
     return NextResponse.json(
-      { error: "invalid_token" },
-      { status: 401, headers: { "WWW-Authenticate": 'Bearer error="invalid_token"' } }
+      {
+        error: "invalid_token",
+        error_description: "Access token revoked, expired, or unknown.",
+      },
+      {
+        status: 401,
+        headers: { "WWW-Authenticate": 'Bearer error="invalid_token"' },
+      }
     );
   }
 
-  const scopes = String(payload.scope || "").split(" ").filter(Boolean);
+  const scopes = String(payload.scope || "")
+    .split(/\s+/)
+    .filter(Boolean);
 
-  // OpenID Connect: "openid" scope is enough to call UserInfo.
-  // Also keep backward compatibility with old "profile:read".
   const hasOpenId = scopes.includes("openid");
-  const hasProfile = scopes.includes("profile") || scopes.includes("profile:read");
-  const hasEmail = scopes.includes("email") || scopes.includes("email:read");
+  const hasProfile =
+    scopes.includes("profile") || scopes.includes("profile:read");
+  const hasEmail =
+    scopes.includes("email") || scopes.includes("email:read");
 
-  if (!hasOpenId && !hasProfile) {
+  // OIDC: openid alone is enough for UserInfo (at least `sub`)
+  if (!hasOpenId && !hasProfile && !hasEmail) {
     emitStep(flowId, {
       step: 6,
       title: "UserInfo request failed",
-      detail: "Token does not have openid or profile scope.",
+      detail: "Token lacks openid, profile, or email scope.",
       status: "error",
     });
     return NextResponse.json(
-      { error: "insufficient_scope", error_description: "openid or profile scope is required." },
-      { status: 403, headers: { "WWW-Authenticate": 'Bearer error="insufficient_scope"' } }
+      {
+        error: "insufficient_scope",
+        error_description: "openid, profile, or email scope is required.",
+      },
+      {
+        status: 403,
+        headers: {
+          "WWW-Authenticate": 'Bearer error="insufficient_scope"',
+        },
+      }
     );
   }
 
@@ -98,15 +163,18 @@ async function handleUserInfo(request) {
       detail: "User no longer exists.",
       status: "error",
     });
-    return NextResponse.json({ error: "invalid_token" }, { status: 401 });
+    return NextResponse.json(
+      { error: "invalid_token", error_description: "User not found." },
+      {
+        status: 401,
+        headers: { "WWW-Authenticate": 'Bearer error="invalid_token"' },
+      }
+    );
   }
 
-  // Standard OIDC UserInfo response
-  const result = {
-    sub: user.id,
-  };
+  const result = { sub: user.id };
 
-  if (hasProfile || hasOpenId) {
+  if (hasOpenId || hasProfile) {
     if (user.name) result.name = user.name;
     if (user.image) result.picture = user.image;
   }
