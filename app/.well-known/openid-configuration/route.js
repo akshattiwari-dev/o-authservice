@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
 
 export async function GET() {
-  const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
+  const baseUrl = (process.env.NEXTAUTH_URL || "http://localhost:3000").replace(
+    /\/$/,
+    ""
+  );
+  // Issuer should be a stable URL (OIDC). Override with OAUTH_ISSUER if set.
+  const issuer = process.env.OAUTH_ISSUER || baseUrl;
 
   const config = {
-    issuer: "o-auth",
-    authorization_endpoint: `${baseUrl}/api/oauth/authorize`,
+    issuer,
+    // Browser consent page — NOT the JSON API route
+    authorization_endpoint: `${baseUrl}/oauth/authorize`,
     token_endpoint: `${baseUrl}/api/oauth/token`,
     userinfo_endpoint: `${baseUrl}/api/oauth/userinfo`,
     jwks_uri: `${baseUrl}/api/oauth/keys`,
@@ -20,7 +26,17 @@ export async function GET() {
       "client_secret_post",
       "none",
     ],
-    claims_supported: ["sub", "email", "name", "iss", "aud", "exp", "iat"],
+    claims_supported: [
+      "sub",
+      "email",
+      "name",
+      "iss",
+      "aud",
+      "exp",
+      "iat",
+      "auth_time",
+      "nonce",
+    ],
     code_challenge_methods_supported: ["S256"],
     grant_types_supported: [
       "authorization_code",
